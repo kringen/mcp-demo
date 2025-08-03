@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-server
+  namespace: mcp-server
+  labels:
+    app: mcp-server
+spec:
+  # For WebSocket, start with 2 replicas and scale as needed
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mcp-server
+  template:
+    metadata:
+      labels:
+        app: mcp-server
+    spec:
+      containers:
+      - name: mcp-server
+        image: kringen/mcp-server:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: websocket
+        env:
+        - name: ADDR
+          valueFrom:
+            configMapKeyRef:
+              name: mcp-server-config
+              key: ADDR
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: mcp-server-config
+              key: DB_NAME
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: mcp-server-config
+              key: DEBUG
+        - name: MONGODB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: username
+        - name: MONGODB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: password
+        - name: MONGO_URI
+          value: "mongodb://admin:password@mongodb-service:27017/mcp_server?authSource=admin"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        # Graceful shutdown for WebSocket connections
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 15"]
+      # Graceful termination period for WebSocket cleanup
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-server-loadbalancer
+  namespace: mcp-server
+  labels:
+    app: mcp-server
+  annotations:
+    # Cloud provider specific annotations can be added here
+    # For example, for AWS:
+    # service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    # service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    # For Azure:
+    # service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+    # For GCP:
+    # cloud.google.com/load-balancer-type: "External"
+spec:
+  selector:
+    app: mcp-server
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: websocket
+  # Session affinity ensures WebSocket connections stick to the same pod
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 86400  # 24 hours
+  type: LoadBalancer

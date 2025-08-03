@@ -1,0 +1,80 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mcp-server-ingress
+  namespace: mcp-server
+  annotations:
+    # NGINX Ingress Controller annotations for WebSocket
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    
+    # Enable WebSocket support
+    nginx.ingress.kubernetes.io/websocket-services: "mcp-server-service"
+    
+    # Session affinity for WebSocket connections
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/affinity-mode: "persistent"
+    nginx.ingress.kubernetes.io/session-cookie-name: "mcp-server-affinity"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "86400"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "86400"
+    
+    # SSL redirect (uncomment for HTTPS)
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    
+    # Rate limiting (optional)
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    
+spec:
+  # Uncomment for HTTPS/TLS
+  # tls:
+  # - hosts:
+  #   - mcp-server.yourdomain.com
+  #   secretName: mcp-server-tls
+  
+  rules:
+  - host: mcp-server.yourdomain.com  # Replace with your domain
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mcp-server-service
+            port:
+              number: 8080
+  
+  # Alternative: for local testing without domain
+  # - http:
+  #     paths:
+  #     - path: /
+  #       pathType: Prefix
+  #       backend:
+  #         service:
+  #           name: mcp-server-service
+  #           port:
+  #             number: 8080
+---
+# Alternative: NodePort service for direct access
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-server-nodeport
+  namespace: mcp-server
+  labels:
+    app: mcp-server
+spec:
+  selector:
+    app: mcp-server
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30800  # Access via <node-ip>:30800
+    protocol: TCP
+    name: websocket
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 86400
+  type: NodePort
